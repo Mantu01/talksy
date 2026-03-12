@@ -21,6 +21,7 @@
     },
     "android": {
       "edgeToEdgeEnabled": true,
+      "package":"com.mantu.talksy",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
