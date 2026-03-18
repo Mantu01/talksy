@@ -9,6 +9,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { MoonStarIcon, SunIcon } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
+import Provider from '@/context/ContextProvider';
 
 const THEME_ICONS = {
   light: SunIcon,
@@ -41,22 +42,24 @@ export default function RootLayout() {
   const { colorScheme } = useColorScheme();
 
   return (
-    <ThemeProvider value={NAV_THEME[colorScheme || 'light']}>
-      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+    <Provider>
+      <ThemeProvider value={NAV_THEME[colorScheme || 'light']}>
+        <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
 
-      <Stack
-        screenOptions={{
-          headerTransparent: true,
-          headerRight: () => <ThemeToggle />,
-          headerTitleAlign: 'center',
-        }}
-      >
-        {TABS.map(({ name, title }) => (
-          <Stack.Screen key={name} name={name} options={{ headerTitle:title }} />
-        ))}
-      </Stack>
+        <Stack
+          screenOptions={{
+            headerTransparent: true,
+            headerRight: () => <ThemeToggle />,
+            headerTitleAlign: 'center',
+          }}
+        >
+          {TABS.map(({ name, title }) => (
+            <Stack.Screen key={name} name={name} options={{ headerTitle:title }} />
+          ))}
+        </Stack>
 
-      <PortalHost />
-    </ThemeProvider>
+        <PortalHost />
+      </ThemeProvider>
+    </Provider>
   );
 }

@@ -11,6 +11,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
+import { useAuth } from '@/context/AuthContext';
+import { router } from 'expo-router';
 import * as React from 'react';
 import { Pressable, type TextInput, View } from 'react-native';
 
@@ -21,9 +23,7 @@ export function SignInForm() {
     passwordInputRef.current?.focus();
   }
 
-  function onSubmit() {
-    // TODO: Submit form and navigate to protected screen if successful
-  }
+  const {setEmail,setPassword,loading,handleSignIn}=useAuth();
 
   return (
     <View className="gap-6">
@@ -47,6 +47,7 @@ export function SignInForm() {
                 onSubmitEditing={onEmailSubmitEditing}
                 returnKeyType="next"
                 submitBehavior="submit"
+                onChangeText={setEmail}
               />
             </View>
             <View className="gap-1.5">
@@ -67,19 +68,18 @@ export function SignInForm() {
                 id="password"
                 secureTextEntry
                 returnKeyType="send"
-                onSubmitEditing={onSubmit}
+                onSubmitEditing={handleSignIn}
+                onChangeText={setPassword}
               />
             </View>
-            <Button className="w-full" onPress={onSubmit}>
+            <Button disabled={loading} className="w-full" onPress={handleSignIn}>
               <Text>Continue</Text>
             </Button>
           </View>
           <Text className="text-center text-sm">
             Don&apos;t have an account?{' '}
             <Pressable
-              onPress={() => {
-                // TODO: Navigate to sign up screen
-              }}>
+              onPress={() => router.push('/signup')}>
               <Text className="text-sm underline underline-offset-4">Sign up</Text>
             </Pressable>
           </Text>

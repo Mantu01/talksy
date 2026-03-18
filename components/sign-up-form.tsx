@@ -11,6 +11,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
+import { useAuth } from '@/context/AuthContext';
+import { router } from 'expo-router';
 import * as React from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 
@@ -21,9 +23,7 @@ export function SignUpForm() {
     passwordInputRef.current?.focus();
   }
 
-  function onSubmit() {
-    // TODO: Submit form and navigate to protected screen if successful
-  }
+  const {handleSignUp,setName,setEmail,setPassword,loading}=useAuth();
 
   return (
     <View className="gap-6">
@@ -37,6 +37,20 @@ export function SignUpForm() {
         <CardContent className="gap-6">
           <View className="gap-6">
             <View className="gap-1.5">
+              <Label htmlFor="name">Name</Label>
+              <Input
+                id="name"
+                placeholder="John Doe"
+                keyboardType="name-phone-pad"
+                autoComplete="name"
+                autoCapitalize="none"
+                onSubmitEditing={onEmailSubmitEditing}
+                returnKeyType="next"
+                submitBehavior="submit"
+                onChangeText={setName}
+              />
+            </View>
+            <View className="gap-1.5">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
@@ -47,6 +61,7 @@ export function SignUpForm() {
                 onSubmitEditing={onEmailSubmitEditing}
                 returnKeyType="next"
                 submitBehavior="submit"
+                onChangeText={setEmail}
               />
             </View>
             <View className="gap-1.5">
@@ -58,19 +73,18 @@ export function SignUpForm() {
                 id="password"
                 secureTextEntry
                 returnKeyType="send"
-                onSubmitEditing={onSubmit}
+                onSubmitEditing={handleSignUp}
+                onChangeText={setPassword}
               />
             </View>
-            <Button className="w-full" onPress={onSubmit}>
+            <Button disabled={loading} className="w-full" onPress={handleSignUp}>
               <Text>Continue</Text>
             </Button>
           </View>
           <Text className="text-center text-sm">
             Already have an account?{' '}
             <Pressable
-              onPress={() => {
-                // TODO: Navigate to sign in screen
-              }}>
+              onPress={() => router.push('/login')}>
               <Text className="text-sm underline underline-offset-4">Sign in</Text>
             </Pressable>
           </Text>
