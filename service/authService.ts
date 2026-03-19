@@ -1,5 +1,7 @@
 import { appwriteClient, appwriteConfig } from "@/lib/config";
-import { Account,ID } from "react-native-appwrite";
+import { Account,ID, OAuthProvider } from "react-native-appwrite";
+import {makeRedirectUri} from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
 
 type SignUp={
   name:string;
@@ -22,6 +24,44 @@ class AuthService{
       .setPlatform(appwriteConfig.platform)
 
     this.account=new Account(appwriteClient);
+  }
+
+  async socialLogin(provider:OAuthProvider){
+    try {
+      const deepLink = new URL(makeRedirectUri({ 
+        scheme:`appwrite-callback-${appwriteConfig.projectId}`
+       }));
+      const scheme = `${deepLink.protocol}//`;
+
+      const loginUrl= await this.account.createOAuth2Token({
+        provider,
+        success:`${deepLink}`,
+        failure:`${deepLink}`
+      });
+
+      if(!loginUrl) throw new Error("Failed to create Login url");
+
+      const result = await WebBrowser.openAuthSessionAsync(`${loginUrl}`, scheme);
+      
+      if(result.type==='success' && result.url){
+        const url = new URL(result.url);
+        const secret = url.searchParams.get('secret');
+        const userId = url.searchParams.get('userId');
+
+        if(!secret || !userId){
+          throw new Error("Oauth failed : Missing Credentials");
+        }
+        await this.account.createSession({
+          userId,
+          secret
+        });
+        return this.getCurrentUser();
+      }else{
+        throw new Error("Oauth Cancelled or failed");
+      }
+    } catch (error) {
+      console.log("Error while creating accound :: ", error)
+    }
   }
 
   async signup({name,email,password}:SignUp){

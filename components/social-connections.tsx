@@ -2,20 +2,19 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { Image, Platform, View } from 'react-native';
+import { OAuthProvider } from 'react-native-appwrite';
+import { useAuth } from '@/context/AuthContext';
 
 const SOCIAL_CONNECTION_STRATEGIES = [
   {
-    type: 'oauth_apple',
-    source: { uri: 'https://img.clerk.com/static/apple.png?width=160' },
-    useTint: true,
-  },
-  {
     type: 'oauth_google',
+    provider:OAuthProvider.Google,
     source: { uri: 'https://img.clerk.com/static/google.png?width=160' },
     useTint: false,
   },
   {
     type: 'oauth_github',
+    provider:OAuthProvider.Github,
     source: { uri: 'https://img.clerk.com/static/github.png?width=160' },
     useTint: true,
   },
@@ -23,6 +22,7 @@ const SOCIAL_CONNECTION_STRATEGIES = [
 
 export function SocialConnections() {
   const { colorScheme } = useColorScheme();
+  const {handleSocialLogin}=useAuth();
 
   return (
     <View className="gap-2 sm:flex-row sm:gap-3">
@@ -33,9 +33,7 @@ export function SocialConnections() {
             variant="outline"
             size="sm"
             className="sm:flex-1"
-            onPress={() => {
-              // TODO: Authenticate with social provider and navigate to protected screen if successful
-            }}>
+            onPress={() => handleSocialLogin(strategy.provider)}>
             <Image
               className={cn('size-4', strategy.useTint && Platform.select({ web: 'dark:invert' }))}
               tintColor={Platform.select({

@@ -1,7 +1,7 @@
 import AuthService from "@/service/authService";
 import { router, usePathname } from "expo-router";
 import { createContext, FC, PropsWithChildren, useContext, useEffect, useMemo, useState } from "react";
-import { Models } from "react-native-appwrite";
+import { Models, OAuthProvider } from "react-native-appwrite";
 
 type AuthContextProps = {
   auth:AuthService,
@@ -17,6 +17,7 @@ type AuthContextProps = {
   handleSignUp:()=>void;
   handleSignIn:()=>void;
   handleLogout:()=>void;
+  handleSocialLogin:(provder:OAuthProvider)=>void;
 };
 
 const publicRoutes=['/login','/signup'];
@@ -90,6 +91,16 @@ const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
     }
   };
 
+  const handleSocialLogin=async(provder:OAuthProvider)=>{
+    try {
+      const user=await auth.socialLogin(provder);
+      setUser(user);
+      router.push('/');
+    } catch (error) {
+      console.log("Error in logout :: authcontext :: ",error);
+    }
+  }
+
   const handleLogout=async()=>{
     try {
       await auth.logout();
@@ -115,6 +126,7 @@ const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
         handleSignUp,
         handleSignIn,
         handleLogout,
+        handleSocialLogin,
       }}
     >
       {children}
