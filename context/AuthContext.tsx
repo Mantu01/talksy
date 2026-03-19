@@ -1,5 +1,7 @@
 import AuthService from "@/service/authService";
-import { createContext, FC, PropsWithChildren, useContext, useMemo, useState } from "react";
+import { router, usePathname } from "expo-router";
+import { createContext, FC, PropsWithChildren, useContext, useEffect, useMemo, useState } from "react";
+import { Models } from "react-native-appwrite";
 
 type AuthContextProps = {
   auth:AuthService,
@@ -7,24 +9,55 @@ type AuthContextProps = {
   email:string,
   password:string,
   loading:boolean,
+  user:Models.User | undefined,
 
   setName:(name:string)=>void,
   setEmail:(email:string)=>void,
   setPassword:(password:string)=>void,
   handleSignUp:()=>void;
   handleSignIn:()=>void;
+  handleLogout:()=>void;
 };
+
+const publicRoutes=['/login','/signup'];
+const protectedRoutes=['/chat'];
 
 const AuthContext=createContext<AuthContextProps | null>(null);
 
 const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
 
-  const auth=useMemo(()=>new AuthService(),[])
+  const auth=useMemo(()=>new AuthService(),[]);
+  const pathName=usePathname();
 
   const [loading,setLoding]=useState<boolean>(false);
   const [name,setName]=useState<string>('');
   const [email,setEmail]=useState<string>('');
   const [password,setPassword]=useState<string>('');
+  const [user,setUser]=useState<Models.User | undefined>(undefined);
+
+  useEffect(()=>{
+    async function fetchCurrentUser() {
+      try {
+        const userData=await auth.getCurrentUser();
+        setUser(userData);
+      } catch (error) {
+        console.log("Error in fetching logged in user :: authcontext ::", error);
+      }
+    }
+    fetchCurrentUser();
+  },[]);
+
+  useEffect(()=>{
+    if(loading) return ;
+
+    if(user && publicRoutes.includes(pathName)){
+      router.push('/');
+    }
+
+    if(!user && protectedRoutes.includes(pathName)){
+      router.push('/login');
+    }
+  },[user,pathName,router,loading]);
 
   const handleSignUp=async()=>{
     if(!name || !email || !password){
@@ -32,8 +65,8 @@ const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
     }
     setLoding(true);
     try {
-      const user=await auth.signup({name,email,password});
-      console.log(user)
+      await auth.signup({name,email,password});
+      router.push('/login');
     } catch (error) {
       console.log("Error in signup :: authcontext :: ", error)
     }finally{
@@ -47,14 +80,25 @@ const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
     }
     setLoding(true);
     try {
-      const user=await auth.login({email,password});
-      console.log(user)
+      const userData=await auth.login({email,password});
+      setUser(userData);
+      router.push('/')
     } catch (error) {
       console.log("Error in signup :: authcontext :: ", error)
     }finally{
       setLoding(false);
     }
   };
+
+  const handleLogout=async()=>{
+    try {
+      await auth.logout();
+      setUser(undefined);
+      router.push('/login');
+    } catch (error) {
+      console.log("Error in logout :: authcontext :: ",error);
+    }
+  }
 
   return (
     <AuthContext.Provider
@@ -64,11 +108,13 @@ const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
         name,
         setName,
         email,
+        user,
         setEmail,
         password,
         setPassword,
         handleSignUp,
-        handleSignIn
+        handleSignIn,
+        handleLogout,
       }}
     >
       {children}

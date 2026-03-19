@@ -1,10 +1,12 @@
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
-import { useRouter } from 'expo-router';
+import { useAuth } from '@/context/AuthContext';
+import { router } from 'expo-router';
 import { View } from 'react-native';
 
 export default function Home() {
-  const router = useRouter();
+
+  const {user,handleLogout}=useAuth();
 
   return (
     <View className="flex-1 items-center justify-center bg-background">
@@ -16,9 +18,15 @@ export default function Home() {
         <Button onPress={() => router.push('/chat')} size="lg" className="rounded-full">
           <Text className="font-semibold text-base">Start chatting</Text>
         </Button>
-        <Button onPress={() => router.push('/signup')} variant="outline" size="lg" className="rounded-full">
-          <Text className="font-semibold text-base">Create account</Text>
-        </Button>
+        {user?(
+          <Button onPress={handleLogout} variant="destructive" size="lg" className="rounded-full">
+            <Text className="font-semibold text-base">Logout</Text>
+          </Button>
+        ):(
+          <Button onPress={() => router.push('/login')} variant="outline" size="lg" className="rounded-full">
+            <Text className="font-semibold text-base">Login</Text>
+          </Button>
+        )}
       </View>
       <Text className="absolute bottom-8 text-xs text-muted-foreground">secure messaging</Text>
     </View>
