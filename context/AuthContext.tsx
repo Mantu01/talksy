@@ -3,13 +3,19 @@ import { router, usePathname } from "expo-router";
 import { createContext, FC, PropsWithChildren, useContext, useEffect, useMemo, useState } from "react";
 import { Models, OAuthProvider } from "react-native-appwrite";
 
+type User = Models.User & {
+  rowId:string,
+  avatar?:string,
+  banner?:string,
+}
+
 type AuthContextProps = {
   auth:AuthService,
   name:string,
   email:string,
   password:string,
   loading:boolean,
-  user:Models.User | undefined,
+  user:User | undefined,
 
   setName:(name:string)=>void,
   setEmail:(email:string)=>void,
@@ -18,6 +24,7 @@ type AuthContextProps = {
   handleSignIn:()=>void;
   handleLogout:()=>void;
   handleSocialLogin:(provder:OAuthProvider)=>void;
+  updateUser:()=>void;
 };
 
 const publicRoutes=['/login','/signup'];
@@ -34,7 +41,7 @@ const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
   const [name,setName]=useState<string>('');
   const [email,setEmail]=useState<string>('');
   const [password,setPassword]=useState<string>('');
-  const [user,setUser]=useState<Models.User | undefined>(undefined);
+  const [user,setUser]=useState<User | undefined>(undefined);
 
   useEffect(()=>{
     async function fetchCurrentUser() {
@@ -111,6 +118,19 @@ const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
     }
   }
 
+  const updateUser=async()=>{
+    if(!name || !user)  return;
+    setLoding(true);
+    try {
+      const userData= await auth.updateUser({name,rowId:user.rowId});
+      setUser(userData);
+    } catch (error) {
+      console.log("Error updating user :: authcontext :: ",error);
+    }finally{
+      setLoding(false);
+    }
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -127,6 +147,7 @@ const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
         handleSignIn,
         handleLogout,
         handleSocialLogin,
+        updateUser,
       }}
     >
       {children}

@@ -15,13 +15,21 @@ export default function Home() {
         <Text className="text-lg text-muted-foreground">Connect instantly</Text>
       </View>
       <View className="w-full px-8 gap-4">
-        <Button onPress={() => router.push('/chat')} size="lg" className="rounded-full">
-          <Text className="font-semibold text-base">Start chatting</Text>
-        </Button>
         {user?(
-          <Button onPress={handleLogout} variant="destructive" size="lg" className="rounded-full">
-            <Text className="font-semibold text-base">Logout</Text>
-          </Button>
+          <>
+            <Button onPress={() => router.push('/profile')} size="lg" className="rounded-full">
+              <Text className="font-semibold text-base">Profile</Text>
+            </Button>
+            <Button onPress={() => router.push('/chat')} size="lg" className="rounded-full">
+              <Text className="font-semibold text-base">Start chatting</Text>
+            </Button>
+            <Button onPress={() => router.push('/explore')} size="lg" className="rounded-full">
+              <Text className="font-semibold text-base">Start chatting</Text>
+            </Button>
+            <Button onPress={handleLogout} variant="destructive" size="lg" className="rounded-full">
+              <Text className="font-semibold text-base">Logout</Text>
+            </Button>
+          </>
         ):(
           <Button onPress={() => router.push('/login')} variant="outline" size="lg" className="rounded-full">
             <Text className="font-semibold text-base">Login</Text>

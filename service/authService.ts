@@ -1,5 +1,5 @@
 import { appwriteClient, appwriteConfig } from "@/lib/config";
-import { Account,ID, OAuthProvider } from "react-native-appwrite";
+import { Account,ID, OAuthProvider,Query,TablesDB } from "react-native-appwrite";
 import {makeRedirectUri} from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 
@@ -16,6 +16,7 @@ type Login={
 
 class AuthService{
   private account;
+  private table;
 
   constructor(){
     appwriteClient
@@ -24,6 +25,7 @@ class AuthService{
       .setPlatform(appwriteConfig.platform)
 
     this.account=new Account(appwriteClient);
+    this.table=new TablesDB(appwriteClient);
   }
 
   async socialLogin(provider:OAuthProvider){
@@ -72,7 +74,16 @@ class AuthService{
         email,
         password
       });
-      return newUser;
+      await this.table.createRow({
+        databaseId:appwriteConfig.databaseId,
+        tableId:appwriteConfig.collections.userTableId,
+        rowId:ID.unique(),
+        data:{
+          userId:newUser.$id,
+          name:newUser.name,
+          email:newUser.email,
+        }
+      });
     } catch (error) {
       console.log("Error while creating accound :: ", error)
     }
@@ -92,7 +103,22 @@ class AuthService{
 
   async getCurrentUser(){
     try {
-      return this.account.get();
+      const currentUser=await this.account.get();
+      if(!currentUser)  return ;
+      
+      const result=await this.table.listRows({
+        databaseId:appwriteConfig.databaseId,
+        tableId:appwriteConfig.collections.userTableId,
+        queries:[Query.equal('userId',currentUser.$id)],
+        total:false
+      });
+      const dbUser=result.rows[0];
+      return {
+        ...currentUser,
+        rowId:dbUser.$id,
+        avatar:dbUser.avatar,
+        banner:dbUser.banner,
+      }
     } catch (error) {
       console.log("Error while getting logged in user ::",error);
     }
@@ -103,6 +129,27 @@ class AuthService{
       return this.account.deleteSession('current');
     } catch (error) {
       console.log("error while logging out ::",error);
+    }
+  }
+
+  async updateUser({name,rowId}:{name:string,rowId:string}){
+    try {
+      const user=await this.account.updateName({name});
+      await this.table.updateRow({
+        databaseId:appwriteConfig.databaseId,
+        tableId:appwriteConfig.collections.userTableId,
+        rowId,
+        data:{
+          name
+        }
+      });
+      return {
+        ...user,
+        userId:user.$id,
+        rowId
+      }
+    } catch (error) {
+      console.log("error updating user ::",error);
     }
   }
 }

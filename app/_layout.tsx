@@ -35,7 +35,10 @@ const TABS = [
   { name: 'index', title: 'Home' },
   { name: 'login', title: 'Login' },
   { name: 'signup', title: 'Signup' },
-  {name:'chat',tile:'Chat'}
+  {name:'chat',tile:'Chat'},
+  {name:'profile',tile:'Profile'},
+  {name:'explore',tile:'Explore'},
+
 ];
 
 export default function RootLayout() {
