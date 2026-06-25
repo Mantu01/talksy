@@ -1,0 +1,93 @@
+import React from "react";
+import { Tabs, Redirect } from "expo-router";
+import { useTheme, ActivityIndicator } from "react-native-paper";
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/utils/api";
+import { socketService } from "@/utils/socket";
+import { View } from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+
+export default function TabLayout() {
+  const theme = useTheme();
+  const { data: user, isLoading } = useQuery({
+    queryKey: ["auth-user"],
+    queryFn: async () => {
+      const res = await apiRequest<any>("/auth/me").catch(() => null);
+      if (res) {
+        socketService.connect();
+      }
+      return res;
+    },
+    retry: false,
+  });
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: theme.colors.background }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (!user) {
+    return <Redirect href="/(auth)/login" />;
+  }
+
+  return (
+    <Tabs
+      screenOptions={{
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: theme.colors.outline,
+        tabBarStyle: {
+          backgroundColor: theme.colors.surface,
+          borderTopWidth: 1,
+          borderTopColor: theme.colors.outlineVariant,
+        },
+        headerStyle: {
+          backgroundColor: theme.colors.surface,
+        },
+        headerTintColor: theme.colors.onSurface,
+        headerTitleStyle: {
+          fontWeight: "bold",
+        },
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: "Chats",
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="chat" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="explore"
+        options={{
+          title: "Explore",
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="compass" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="groups"
+        options={{
+          title: "Groups",
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="account-group" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: "Settings",
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="cog" size={size} color={color} />
+          ),
+        }}
+      />
+    </Tabs>
+  );
+}
