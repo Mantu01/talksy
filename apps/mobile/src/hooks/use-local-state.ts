@@ -1,6 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-export function useLocalState<T>(key: string | any[], initialValue: T) {
+type LocalStateUpdater<T> = T | ((prev: T) => T);
+
+export function useLocalState<T>(key: string | readonly unknown[], initialValue: T) {
   const queryClient = useQueryClient();
   const queryKey = typeof key === "string" ? [key] : key;
 
@@ -12,10 +14,10 @@ export function useLocalState<T>(key: string | any[], initialValue: T) {
     gcTime: Infinity,
   });
 
-  const setValue = (newValue: T | ((prev: T) => T)) => {
+  const setValue = (newValue: LocalStateUpdater<T>) => {
     queryClient.setQueryData(queryKey, (prev: T | undefined) => {
       const resolvedPrev = prev === undefined ? initialValue : prev;
-      return typeof newValue === "function" ? (newValue as Function)(resolvedPrev) : newValue;
+      return typeof newValue === "function" ? (newValue as (prev: T) => T)(resolvedPrev) : newValue;
     });
   };
 

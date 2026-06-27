@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { RequestHandler, Response, Router } from "express";
 import { register, login, getMe } from "../controllers/auth";
 import {
   updateProfile,
@@ -8,6 +8,8 @@ import {
   sendFriendRequest,
   acceptFriendRequest,
   declineFriendRequest,
+  changePassword,
+  getUserDetails,
 } from "../controllers/user";
 import {
   createGroup,
@@ -16,46 +18,65 @@ import {
   requestToJoinGroup,
   acceptJoinRequest,
   declineJoinRequest,
+  getGroupDetails,
+  updateGroup,
 } from "../controllers/group";
-import { getDirectMessages, getGroupMessages } from "../controllers/chat";
-import { authenticate } from "../middleware/auth";
+import { getDirectMessages, getGroupMessages, getRecentConversations } from "../controllers/chat";
+import { authenticate, AuthenticatedRequest } from "../middleware/auth";
 import { upload } from "../middleware/multer";
 
 const router = Router();
+type ProtectedController = (req: AuthenticatedRequest, res: Response) => Promise<void>;
 
+const protectedRoute = authenticate as RequestHandler;
+const route = (handler: ProtectedController): RequestHandler => handler as RequestHandler;
+
+router.get('/health',(_,res)=>{
+  res.send('Server is Ok');
+})
 router.post("/auth/register", register);
 router.post("/auth/login", login);
-router.get("/auth/me", authenticate as any, getMe as any);
+router.get("/auth/me", protectedRoute, route(getMe));
 
 router.put(
   "/users/profile",
-  authenticate as any,
+  protectedRoute,
   upload.fields([
     { name: "profile", maxCount: 1 },
     { name: "banner", maxCount: 1 },
   ]),
-  updateProfile as any
+  route(updateProfile)
 );
-router.get("/users/friends", authenticate as any, getFriends as any);
-router.get("/users/friend-requests", authenticate as any, getFriendRequests as any);
-router.get("/users/explore", authenticate as any, getExploreUsers as any);
-router.post("/users/friend-request/send/:id", authenticate as any, sendFriendRequest as any);
-router.post("/users/friend-request/accept/:id", authenticate as any, acceptFriendRequest as any);
-router.post("/users/friend-request/decline/:id", authenticate as any, declineFriendRequest as any);
+router.put("/users/change-password", protectedRoute, route(changePassword));
+router.get("/users/friends", protectedRoute, route(getFriends));
+router.get("/users/friend-requests", protectedRoute, route(getFriendRequests));
+router.get("/users/explore", protectedRoute, route(getExploreUsers));
+router.get("/users/:id", protectedRoute, route(getUserDetails));
+router.post("/users/friend-request/send/:id", protectedRoute, route(sendFriendRequest));
+router.post("/users/friend-request/accept/:id", protectedRoute, route(acceptFriendRequest));
+router.post("/users/friend-request/decline/:id", protectedRoute, route(declineFriendRequest));
 
 router.post(
   "/groups",
-  authenticate as any,
+  protectedRoute,
   upload.fields([{ name: "logo", maxCount: 1 }]),
-  createGroup as any
+  route(createGroup)
 );
-router.get("/groups/joined", authenticate as any, getJoinedGroups as any);
-router.get("/groups/explore", authenticate as any, getExploreGroups as any);
-router.post("/groups/join-request/:id", authenticate as any, requestToJoinGroup as any);
-router.post("/groups/join-request/accept/:groupId/:userId", authenticate as any, acceptJoinRequest as any);
-router.post("/groups/join-request/decline/:groupId/:userId", authenticate as any, declineJoinRequest as any);
+router.get("/groups/joined", protectedRoute, route(getJoinedGroups));
+router.get("/groups/explore", protectedRoute, route(getExploreGroups));
+router.get("/groups/:id", protectedRoute, route(getGroupDetails));
+router.put(
+  "/groups/:id",
+  protectedRoute,
+  upload.fields([{ name: "logo", maxCount: 1 }]),
+  route(updateGroup)
+);
+router.post("/groups/join-request/:id", protectedRoute, route(requestToJoinGroup));
+router.post("/groups/join-request/accept/:groupId/:userId", protectedRoute, route(acceptJoinRequest));
+router.post("/groups/join-request/decline/:groupId/:userId", protectedRoute, route(declineJoinRequest));
 
-router.get("/chats/messages/:userId", authenticate as any, getDirectMessages as any);
-router.get("/chats/group-messages/:groupId", authenticate as any, getGroupMessages as any);
+router.get("/chats/recent", protectedRoute, route(getRecentConversations));
+router.get("/chats/messages/:userId", protectedRoute, route(getDirectMessages));
+router.get("/chats/group-messages/:groupId", protectedRoute, route(getGroupMessages));
 
 export default router;

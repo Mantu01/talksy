@@ -1,41 +1,45 @@
 import React from "react";
 import { View, StyleSheet, FlatList, RefreshControl } from "react-native";
-import { List, Avatar, Button, useTheme, SegmentedButtons, Text, Divider, ActivityIndicator } from "react-native-paper";
+import { Button, useTheme, SegmentedButtons } from "react-native-paper";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/utils/api";
 import { useLocalState } from "@/hooks/use-local-state";
+import { ActionListRow } from "@/components/explore/ActionListRow";
+import { ScreenState } from "@/components/common/ScreenState";
+import { TalksyGroup, TalksyUser } from "@/types/domain";
+import { getId, hasId } from "@/utils/ids";
 
 export default function ExploreScreen() {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const [exploreTab, setExploreTab] = useLocalState("explore-tab", "people");
 
-  const { data: authUser } = useQuery<any>({
+  const { data: authUser } = useQuery<TalksyUser | null>({
     queryKey: ["auth-user"],
-    queryFn: () => apiRequest("/auth/me").catch(() => null),
+    queryFn: () => apiRequest<TalksyUser>("/auth/me").catch(() => null),
   });
 
-  const { data: people, isLoading: isLoadingPeople, refetch: refetchPeople } = useQuery<any[]>({
+  const { data: people, isLoading: isLoadingPeople, refetch: refetchPeople } = useQuery<TalksyUser[]>({
     queryKey: ["explore-users"],
-    queryFn: () => apiRequest("/users/explore"),
+    queryFn: () => apiRequest<TalksyUser[]>("/users/explore"),
     enabled: exploreTab === "people",
   });
 
-  const { data: groups, isLoading: isLoadingGroups, refetch: refetchGroups } = useQuery<any[]>({
+  const { data: groups, isLoading: isLoadingGroups, refetch: refetchGroups } = useQuery<TalksyGroup[]>({
     queryKey: ["explore-groups"],
-    queryFn: () => apiRequest("/groups/explore"),
+    queryFn: () => apiRequest<TalksyGroup[]>("/groups/explore"),
     enabled: exploreTab === "groups",
   });
 
-  const { data: requests, isLoading: isLoadingRequests, refetch: refetchRequests } = useQuery<any[]>({
+  const { data: requests, isLoading: isLoadingRequests, refetch: refetchRequests } = useQuery<TalksyUser[]>({
     queryKey: ["friend-requests"],
-    queryFn: () => apiRequest("/users/friend-requests"),
+    queryFn: () => apiRequest<TalksyUser[]>("/users/friend-requests"),
     enabled: exploreTab === "requests",
   });
 
   const sendRequestMutation = useMutation({
     mutationFn: async (userId: string) => {
-      return apiRequest(`/users/friend-request/send/${userId}`, { method: "POST" });
+      return apiRequest(`/users/friend-request/send/${userId}`, { method: "POST", body: JSON.stringify({}) });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["explore-users"] });
@@ -45,7 +49,7 @@ export default function ExploreScreen() {
 
   const joinRequestMutation = useMutation({
     mutationFn: async (groupId: string) => {
-      return apiRequest(`/groups/join-request/${groupId}`, { method: "POST" });
+      return apiRequest(`/groups/join-request/${groupId}`, { method: "POST", body: JSON.stringify({}) });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["explore-groups"] });
@@ -54,22 +58,24 @@ export default function ExploreScreen() {
 
   const acceptFriendMutation = useMutation({
     mutationFn: async (userId: string) => {
-      return apiRequest(`/users/friend-request/accept/${userId}`, { method: "POST" });
+      return apiRequest(`/users/friend-request/accept/${userId}`, { method: "POST", body: JSON.stringify({}) });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["friend-requests"] });
       queryClient.invalidateQueries({ queryKey: ["friends"] });
       queryClient.invalidateQueries({ queryKey: ["auth-user"] });
+      queryClient.invalidateQueries({ queryKey: ["explore-users"] });
     },
   });
 
   const declineFriendMutation = useMutation({
     mutationFn: async (userId: string) => {
-      return apiRequest(`/users/friend-request/decline/${userId}`, { method: "POST" });
+      return apiRequest(`/users/friend-request/decline/${userId}`, { method: "POST", body: JSON.stringify({}) });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["friend-requests"] });
       queryClient.invalidateQueries({ queryKey: ["auth-user"] });
+      queryClient.invalidateQueries({ queryKey: ["explore-users"] });
     },
   });
 
@@ -83,78 +89,54 @@ export default function ExploreScreen() {
     }
   };
 
-  const renderPerson = ({ item }: { item: any }) => {
-    const initial = item.name ? item.name.charAt(0).toUpperCase() : "";
-    const isPending = sendRequestMutation.isPending && sendRequestMutation.variables === item._id;
-    const isSent = authUser?.friendRequestsSent?.some((id: any) => {
-      const stringId = typeof id === "object" ? id._id || id.id || id : id;
-      return stringId?.toString() === item._id?.toString();
-    });
+  const renderPerson = ({ item }: { item: TalksyUser }) => {
+    const userId = getId(item);
+    const isPending = sendRequestMutation.isPending && sendRequestMutation.variables === userId;
+    const isSent = hasId(authUser?.friendRequestsSent, userId);
 
     return (
-      <List.Item
+      <ActionListRow
         title={item.name}
         description={item.bio || "Hey there! I am using Talksy."}
-        left={(props) =>
-          item.profile ? (
-            <Avatar.Image {...props} size={48} source={{ uri: item.profile }} />
-          ) : (
-            <Avatar.Text {...props} size={48} label={initial} />
-          )
-        }
-        right={() => (
-          <View style={styles.actionContainer}>
+        imageUri={item.profile}
+        action={
+          <>
             {isSent ? (
-              <Button
-                mode="outlined"
-                disabled
-              >
+              <Button mode="outlined" disabled compact>
                 Request Sent
               </Button>
             ) : (
               <Button
                 mode="contained-tonal"
-                onPress={() => sendRequestMutation.mutate(item._id)}
+                onPress={() => sendRequestMutation.mutate(userId)}
                 disabled={isPending}
                 loading={isPending}
+                compact
               >
                 Add Friend
               </Button>
             )}
-          </View>
-        )}
-        style={styles.listItem}
+          </>
+        }
       />
     );
   };
 
-  const renderGroup = ({ item }: { item: any }) => {
-    const initial = item.title ? item.title.charAt(0).toUpperCase() : "";
+  const renderGroup = ({ item }: { item: TalksyGroup }) => {
     const isPending = joinRequestMutation.isPending && joinRequestMutation.variables === item._id;
-    const isRequested = item.joinRequests?.some((id: any) => {
-      const stringId = typeof id === "object" ? id._id || id.id || id : id;
-      const currentUserId = authUser?.id || authUser?._id;
-      return stringId?.toString() === currentUserId?.toString();
-    });
+    const currentUserId = getId(authUser);
+    const isRequested = Boolean(item.joinRequests?.some((id) => getId(id) === currentUserId));
 
     return (
-      <List.Item
+      <ActionListRow
         title={item.title}
         description={item.description || "Join this group to connect."}
-        left={(props) =>
-          item.logo ? (
-            <Avatar.Image {...props} size={48} source={{ uri: item.logo }} />
-          ) : (
-            <Avatar.Text {...props} size={48} label={initial} />
-          )
-        }
-        right={() => (
-          <View style={styles.actionContainer}>
+        imageUri={item.logo}
+        meta={`${item.members?.length || 1} members`}
+        action={
+          <>
             {isRequested ? (
-              <Button
-                mode="outlined"
-                disabled
-              >
+              <Button mode="outlined" disabled compact>
                 Requested
               </Button>
             ) : (
@@ -163,39 +145,33 @@ export default function ExploreScreen() {
                 onPress={() => joinRequestMutation.mutate(item._id)}
                 disabled={isPending}
                 loading={isPending}
+                compact
               >
                 Join
               </Button>
             )}
-          </View>
-        )}
-        style={styles.listItem}
+          </>
+        }
       />
     );
   };
 
-  const renderRequest = ({ item }: { item: any }) => {
-    const initial = item.name ? item.name.charAt(0).toUpperCase() : "";
-    const isAccepting = acceptFriendMutation.isPending && acceptFriendMutation.variables === item._id;
-    const isDeclining = declineFriendMutation.isPending && declineFriendMutation.variables === item._id;
+  const renderRequest = ({ item }: { item: TalksyUser }) => {
+    const userId = getId(item);
+    const isAccepting = acceptFriendMutation.isPending && acceptFriendMutation.variables === userId;
+    const isDeclining = declineFriendMutation.isPending && declineFriendMutation.variables === userId;
 
     return (
-      <List.Item
+      <ActionListRow
         title={item.name}
         description={item.bio || "Wants to connect with you!"}
-        left={(props) =>
-          item.profile ? (
-            <Avatar.Image {...props} size={48} source={{ uri: item.profile }} />
-          ) : (
-            <Avatar.Text {...props} size={48} label={initial} />
-          )
-        }
-        right={() => (
+        imageUri={item.profile}
+        action={
           <View style={styles.actionRow}>
             <Button
               mode="contained"
               compact
-              onPress={() => acceptFriendMutation.mutate(item._id)}
+              onPress={() => acceptFriendMutation.mutate(userId)}
               disabled={isAccepting || isDeclining}
               loading={isAccepting}
               style={styles.actionBtn}
@@ -205,7 +181,7 @@ export default function ExploreScreen() {
             <Button
               mode="outlined"
               compact
-              onPress={() => declineFriendMutation.mutate(item._id)}
+              onPress={() => declineFriendMutation.mutate(userId)}
               disabled={isAccepting || isDeclining}
               loading={isDeclining}
               style={styles.actionBtn}
@@ -213,8 +189,7 @@ export default function ExploreScreen() {
               Reject
             </Button>
           </View>
-        )}
-        style={styles.listItem}
+        }
       />
     );
   };
@@ -224,12 +199,6 @@ export default function ExploreScreen() {
     : exploreTab === "groups"
     ? isLoadingGroups
     : isLoadingRequests;
-
-  const listData = exploreTab === "people"
-    ? people
-    : exploreTab === "groups"
-    ? groups
-    : requests;
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -247,31 +216,45 @@ export default function ExploreScreen() {
       </View>
 
       {isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" />
-        </View>
-      ) : !listData || listData.length === 0 ? (
-        <View style={styles.center}>
-          <Text variant="bodyLarge" style={styles.emptyText}>
-            {exploreTab === "people"
-              ? "No new people to discover right now!"
-              : exploreTab === "groups"
-              ? "No new groups to discover right now!"
-              : "No pending friend requests."}
-          </Text>
-        </View>
+        <ScreenState loading />
+      ) : exploreTab === "people" ? (
+        !people || people.length === 0 ? (
+          <ScreenState title="No new people to discover right now." />
+        ) : (
+          <FlatList
+            data={people}
+            keyExtractor={(item) => getId(item)}
+            renderItem={renderPerson}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={false} onRefresh={onRefresh} colors={[theme.colors.primary]} />
+            }
+          />
+        )
+      ) : exploreTab === "groups" ? (
+        !groups || groups.length === 0 ? (
+          <ScreenState title="No new groups to discover right now." />
+        ) : (
+          <FlatList
+            data={groups}
+            keyExtractor={(item) => item._id}
+            renderItem={renderGroup}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={false} onRefresh={onRefresh} colors={[theme.colors.primary]} />
+            }
+          />
+        )
+      ) : !requests || requests.length === 0 ? (
+        <ScreenState
+          title="No pending friend requests."
+        />
       ) : (
         <FlatList
-          data={listData}
-          keyExtractor={(item) => item._id}
-          renderItem={
-            exploreTab === "people"
-              ? renderPerson
-              : exploreTab === "groups"
-              ? renderGroup
-              : renderRequest
-          }
-          ItemSeparatorComponent={() => <Divider />}
+          data={requests}
+          keyExtractor={(item) => getId(item)}
+          renderItem={renderRequest}
+          contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl refreshing={false} onRefresh={onRefresh} colors={[theme.colors.primary]} />
           }
@@ -286,27 +269,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   tabSelector: {
-    padding: 12,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 8,
   },
   segmentedButtons: {
     width: "100%",
   },
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  emptyText: {
-    textAlign: "center",
-    opacity: 0.6,
-  },
-  listItem: {
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-  },
-  actionContainer: {
-    justifyContent: "center",
+  listContent: {
+    paddingBottom: 24,
   },
   actionRow: {
     flexDirection: "row",

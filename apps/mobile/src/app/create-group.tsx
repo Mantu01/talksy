@@ -1,11 +1,13 @@
 import React from "react";
 import { View, StyleSheet, ScrollView, Platform } from "react-native";
-import { TextInput, Button, Text, Card, HelperText, Avatar, useTheme, Appbar } from "react-native-paper";
+import { TextInput, Button, Text, Card, HelperText, useTheme, Appbar } from "react-native-paper";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/utils/api";
 import { useLocalState } from "@/hooks/use-local-state";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import { SafeAvatar } from "@/components/common/SafeAvatar";
+import { TalksyGroup } from "@/types/domain";
 
 export default function CreateGroupScreen() {
   const theme = useTheme();
@@ -65,7 +67,7 @@ export default function CreateGroupScreen() {
         uri: uri,
         name: `${fieldName}.${fileType}`,
         type: `image/${fileType}`,
-      } as any);
+      } as unknown as Blob);
     }
   };
 
@@ -79,7 +81,7 @@ export default function CreateGroupScreen() {
         await appendFileToFormData(formData, "logo", logoUri);
       }
 
-      return apiRequest<any>("/groups", {
+      return apiRequest<TalksyGroup>("/groups", {
         method: "POST",
         body: formData,
       });
@@ -92,12 +94,10 @@ export default function CreateGroupScreen() {
       setErrorMsg("");
       router.back();
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       setErrorMsg(err.message || "Failed to create group");
     },
   });
-
-  const initial = title ? title.charAt(0).toUpperCase() : "G";
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -110,11 +110,7 @@ export default function CreateGroupScreen() {
         <Card style={styles.card}>
           <Card.Content style={styles.cardContent}>
             <View style={styles.logoSection}>
-              {logoUri ? (
-                <Avatar.Image size={80} source={{ uri: logoUri }} />
-              ) : (
-                <Avatar.Text size={80} label={initial} />
-              )}
+              <SafeAvatar uri={logoUri} name={title || "G"} size={80} />
               <View style={styles.logoButtons}>
                 <Button mode="outlined" compact onPress={() => pickLogo("camera")}>
                   Camera
@@ -138,9 +134,9 @@ export default function CreateGroupScreen() {
               value={description}
               onChangeText={setDescription}
               mode="outlined"
+              style={styles.input}
               multiline
               numberOfLines={3}
-              style={styles.input}
             />
 
             {errorMsg ? (

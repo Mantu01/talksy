@@ -41,6 +41,9 @@ export const register = async (req: Request, res: Response): Promise<void> => {
         dob: user.dob,
         profile: user.profile,
         banner: user.banner,
+        friends: user.friends || [],
+        friendRequestsSent: user.friendRequestsSent || [],
+        friendRequestsReceived: user.friendRequestsReceived || [],
       },
     });
   } catch (error) {
@@ -89,6 +92,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         dob: user.dob,
         profile: user.profile,
         banner: user.banner,
+        friends: user.friends || [],
+        friendRequestsSent: user.friendRequestsSent || [],
+        friendRequestsReceived: user.friendRequestsReceived || [],
       },
     });
   } catch (error) {

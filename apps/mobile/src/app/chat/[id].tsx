@@ -1,127 +1,221 @@
 import React from "react";
-import { View, StyleSheet, FlatList, KeyboardAvoidingView, Platform } from "react-native";
-import { Appbar, TextInput, IconButton, Avatar, Text, useTheme, ActivityIndicator } from "react-native-paper";
+import { View, StyleSheet, FlatList, KeyboardAvoidingView, Platform, Pressable, TextInput } from "react-native";
+import { Appbar, IconButton, useTheme, ActivityIndicator, Text } from "react-native-paper";
 import { useLocalSearchParams, router } from "expo-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/utils/api";
 import { socketService } from "@/utils/socket";
 import { useLocalState } from "@/hooks/use-local-state";
+import { SafeAvatar } from "@/components/common/SafeAvatar";
+import { MessageBubble } from "@/components/chat/MessageBubble";
+import { TypingIndicator } from "@/components/chat/TypingIndicator";
+import { TalksyMessage, TalksyUser } from "@/types/domain";
+import { getId } from "@/utils/ids";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function ChatScreen() {
   const theme = useTheme();
-  const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  const [text, setText] = useLocalState(`chat-input-${id}`, "");
+  const { data: socketStatus } = useQuery<"connected" | "disconnected">({
+    queryKey: ["socket-status"],
+    queryFn: () => "disconnected",
+    staleTime: Infinity,
+  });
 
-  const { data: currentUser } = useQuery<any>({
+  const { data: currentUser } = useQuery<TalksyUser | null>({
     queryKey: ["auth-user"],
-    queryFn: () => apiRequest("/auth/me").catch(() => null),
+    queryFn: async () => {
+      try {
+        return await apiRequest<TalksyUser>("/auth/me");
+      } catch {
+        return null;
+      }
+    },
   });
 
-  const { data: friends } = useQuery<any[]>({
+  const currentUserId = getId(currentUser);
+  const [text, setText] = useLocalState(["chat-input", currentUserId, id], "");
+
+  const typingTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTypingRef = React.useRef<boolean>(false);
+
+  const { data: friends } = useQuery<TalksyUser[]>({
     queryKey: ["friends"],
-    queryFn: () => apiRequest("/users/friends"),
+    queryFn: () => apiRequest<TalksyUser[]>("/users/friends"),
   });
 
-  const partner = friends?.find((f) => f._id === id);
+  const partner = friends?.find((f) => getId(f) === id);
 
-  const { data: messages, isLoading } = useQuery<any[]>({
+  const { data: userStatus } = useQuery<"online" | "offline" | null>({
+    queryKey: ["user-status", id],
+    queryFn: () => null,
+    enabled: !!id,
+  });
+
+  const { data: isTyping } = useQuery<boolean | null>({
+    queryKey: ["user-typing", id],
+    queryFn: () => null,
+    enabled: !!id,
+  });
+
+  const { data: messages, isLoading } = useQuery<TalksyMessage[]>({
     queryKey: ["messages", id],
-    queryFn: () => apiRequest(`/chats/messages/${id}`),
+    queryFn: () => apiRequest<TalksyMessage[]>(`/chats/messages/${id}`),
   });
+
+  const handleTextChange = (val: string) => {
+    setText(val);
+    if (!isTypingRef.current) {
+      isTypingRef.current = true;
+      socketService.sendTypingStatus(id, true);
+    }
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    typingTimeoutRef.current = setTimeout(() => {
+      isTypingRef.current = false;
+      socketService.sendTypingStatus(id, false);
+    }, 2000);
+  };
 
   const handleSend = () => {
     if (!text.trim()) return;
     socketService.sendMessage(id, null, text.trim());
     setText("");
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    isTypingRef.current = false;
+    socketService.sendTypingStatus(id, false);
+  };
+
+  const handleHeaderPress = () => {
+    router.push(`/chat/details/${id}`);
   };
 
   const reversedMessages = messages ? [...messages].reverse() : [];
 
-  const renderMessage = ({ item }: { item: any }) => {
-    const isMe = item.sender._id === currentUser?.id || item.sender === currentUser?.id || item.sender._id === currentUser?._id;
+  const renderMessage = ({ item }: { item: TalksyMessage }) => {
+    const currentUserId = getId(currentUser);
+    const senderId = getId(typeof item.sender === "string" ? item.sender : item.sender);
+    const isMe = senderId === currentUserId;
+
     return (
-      <View style={[styles.messageRow, isMe ? styles.myMessageRow : styles.theirMessageRow]}>
-        <View
-          style={[
-            styles.bubble,
-            isMe
-              ? [styles.myBubble, { backgroundColor: theme.colors.primary }]
-              : [styles.theirBubble, { backgroundColor: theme.colors.surfaceVariant }],
-          ]}
-        >
-          <Text
-            variant="bodyMedium"
-            style={{ color: isMe ? theme.colors.onPrimary : theme.colors.onSurfaceVariant }}
-          >
-            {item.text}
-          </Text>
-          <Text
-            variant="bodySmall"
-            style={[
-              styles.time,
-              { color: isMe ? theme.colors.onPrimary : theme.colors.onSurfaceVariant, opacity: 0.6 },
-            ]}
-          >
-            {new Date(item.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-          </Text>
-        </View>
-      </View>
+      <MessageBubble
+        text={item.text}
+        createdAt={item.createdAt}
+        isMe={isMe}
+        showAvatar={false}
+      />
     );
   };
 
   const headerTitle = partner?.name || "Chat";
   const headerAvatar = partner?.profile;
-  const initial = headerTitle.charAt(0).toUpperCase();
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <Appbar.Header style={{ backgroundColor: theme.colors.surface }}>
+      <Appbar.Header
+        style={{
+          backgroundColor: theme.colors.surface,
+          borderBottomWidth: 1,
+          borderBottomColor: theme.colors.outlineVariant,
+          elevation: 0,
+        }}
+      >
         <Appbar.BackAction onPress={() => router.back()} />
-        {headerAvatar ? (
-          <Avatar.Image size={36} source={{ uri: headerAvatar }} style={styles.headerAvatar} />
-        ) : (
-          <Avatar.Text size={36} label={initial} style={styles.headerAvatar} />
-        )}
-        <Appbar.Content title={headerTitle} subtitle={partner?.bio || "Online"} />
+        <Pressable onPress={handleHeaderPress} style={styles.headerAvatarPressable}>
+          <View style={styles.avatarWrapper}>
+            <SafeAvatar uri={headerAvatar} name={headerTitle} size={38} />
+            {userStatus === "online" && (
+              <View style={[styles.onlineDot, { backgroundColor: "#4CAF50", borderColor: theme.colors.surface }]} />
+            )}
+          </View>
+        </Pressable>
+        <Pressable onPress={handleHeaderPress} style={styles.headerTitlePressable}>
+          <Appbar.Content
+            title={headerTitle}
+            subtitle={
+              userStatus === "online" ? (
+                <Text style={{ color: "#4CAF50", fontSize: 11, fontWeight: "600" }}>
+                  Active now
+                </Text>
+              ) : (
+                <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 11, opacity: 0.8 }}>
+                  Offline
+                </Text>
+              )
+            }
+          />
+        </Pressable>
+        <Appbar.Action icon="phone-outline" onPress={() => {}} iconColor={theme.colors.primary} />
+        <Appbar.Action icon="video-outline" onPress={() => {}} iconColor={theme.colors.primary} />
+        <Appbar.Action icon="information-outline" onPress={handleHeaderPress} iconColor={theme.colors.primary} />
       </Appbar.Header>
 
-      {isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" />
-        </View>
-      ) : (
-        <FlatList
-          data={reversedMessages}
-          keyExtractor={(item) => item._id}
-          renderItem={renderMessage}
-          inverted
-          contentContainerStyle={styles.listContent}
-        />
-      )}
-
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <View style={[styles.inputContainer, { backgroundColor: theme.colors.surface }]}>
-          <TextInput
-            placeholder="Type a message..."
-            value={text}
-            onChangeText={setText}
-            mode="flat"
-            dense
-            multiline
-            style={styles.input}
-            underlineColor="transparent"
-            activeUnderlineColor="transparent"
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      >
+        {isLoading ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" />
+          </View>
+        ) : (
+          <FlatList
+            data={reversedMessages}
+            keyExtractor={(item) => item._id}
+            renderItem={renderMessage}
+            inverted
+            contentContainerStyle={styles.listContent}
+            ListHeaderComponent={isTyping ? <TypingIndicator /> : null}
           />
+        )}
+
+        {socketStatus === "disconnected" ? (
+          <View style={[styles.offlineBanner, { backgroundColor: theme.colors.errorContainer }]}>
+            <Text style={{ color: theme.colors.onErrorContainer, fontSize: 12, textAlign: "center", fontWeight: "600" }}>
+              Offline. Connecting to server...
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={[
+          styles.inputContainer,
+          {
+            backgroundColor: theme.colors.surface,
+            borderTopColor: theme.colors.outlineVariant,
+            paddingBottom: Math.max(insets.bottom, 8),
+          }
+        ]}>
+          <IconButton
+            icon="plus"
+            size={24}
+            iconColor={theme.colors.primary}
+            onPress={() => {}}
+            style={styles.attachmentButton}
+          />
+          <View style={[styles.inputFrame, { backgroundColor: theme.colors.elevation.level1, borderColor: theme.colors.outlineVariant }]}>
+            <TextInput
+              placeholder="Type a message..."
+              placeholderTextColor={theme.colors.onSurfaceVariant}
+              value={text}
+              onChangeText={handleTextChange}
+              multiline
+              style={[styles.input, { color: theme.colors.onSurface }]}
+            />
+          </View>
           <IconButton
             icon="send"
             mode="contained"
             containerColor={theme.colors.primary}
             iconColor={theme.colors.onPrimary}
-            size={24}
+            size={22}
             onPress={handleSend}
-            disabled={!text.trim()}
+            disabled={!text.trim() || socketStatus === "disconnected"}
           />
         </View>
       </KeyboardAvoidingView>
@@ -133,56 +227,65 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  offlineBanner: {
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
   center: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
-  headerAvatar: {
-    marginRight: 8,
+  headerAvatarPressable: {
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 4,
+  },
+  avatarWrapper: {
+    position: "relative",
+  },
+  onlineDot: {
+    position: "absolute",
+    bottom: -1,
+    right: -1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+  },
+  headerTitlePressable: {
+    flex: 1,
+    justifyContent: "center",
   },
   listContent: {
-    padding: 16,
-    gap: 12,
-  },
-  messageRow: {
-    flexDirection: "row",
-    width: "100%",
-  },
-  myMessageRow: {
-    justifyContent: "flex-end",
-  },
-  theirMessageRow: {
-    justifyContent: "flex-start",
-  },
-  bubble: {
-    maxWidth: "75%",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    gap: 4,
-  },
-  myBubble: {
-    borderBottomRightRadius: 2,
-  },
-  theirBubble: {
-    borderBottomLeftRadius: 2,
-  },
-  time: {
-    alignSelf: "flex-end",
-    fontSize: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 6,
   },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderTopWidth: 1,
-    borderTopColor: "rgba(0,0,0,0.05)",
+  },
+  attachmentButton: {
+    margin: 0,
+    marginRight: 4,
+  },
+  inputFrame: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    marginRight: 6,
   },
   input: {
     flex: 1,
     maxHeight: 100,
-    backgroundColor: "transparent",
+    fontSize: 15,
+    paddingVertical: 8,
   },
 });

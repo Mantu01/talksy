@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, setToken } from "@/utils/api";
 import { socketService } from "@/utils/socket";
 import { useLocalState } from "@/hooks/use-local-state";
+import { AuthResponse } from "@/types/domain";
 
 export default function RegisterScreen() {
   const theme = useTheme();
@@ -18,7 +19,7 @@ export default function RegisterScreen() {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      return apiRequest<{ token: string; user: any }>("/auth/register", {
+      return apiRequest<AuthResponse>("/auth/register", {
         method: "POST",
         body: JSON.stringify({ name, email, password }),
       });
@@ -33,7 +34,7 @@ export default function RegisterScreen() {
       setErrorMsg("");
       router.replace("/");
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       setErrorMsg(err.message || "Registration failed");
     },
   });

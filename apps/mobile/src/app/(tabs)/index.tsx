@@ -1,85 +1,49 @@
 import React from "react";
 import { View, StyleSheet, FlatList, RefreshControl } from "react-native";
-import { List, Avatar, FAB, useTheme, SegmentedButtons, Text, Divider, ActivityIndicator } from "react-native-paper";
+import { FAB, useTheme, SegmentedButtons } from "react-native-paper";
 import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/utils/api";
 import { useLocalState } from "@/hooks/use-local-state";
+import { ChatPreviewRow } from "@/components/chat/ChatPreviewRow";
+import { ScreenState } from "@/components/common/ScreenState";
+import { ChatListItem, TalksyGroup, TalksyUser } from "@/types/domain";
+import { getId } from "@/utils/ids";
 
 export default function ChatsScreen() {
   const theme = useTheme();
   const [filter, setFilter] = useLocalState("chats-filter", "all");
 
-  const { data: friends, isLoading: isLoadingFriends, refetch: refetchFriends } = useQuery<any[]>({
-    queryKey: ["friends"],
-    queryFn: () => apiRequest("/users/friends"),
-  });
-
-  const { data: groups, isLoading: isLoadingGroups, refetch: refetchGroups } = useQuery<any[]>({
-    queryKey: ["joined-groups"],
-    queryFn: () => apiRequest("/groups/joined"),
+  const { data: conversations, isLoading, refetch } = useQuery<ChatListItem[]>({
+    queryKey: ["recent-conversations"],
+    queryFn: () => apiRequest<ChatListItem[]>("/chats/recent"),
   });
 
   const onRefresh = () => {
-    refetchFriends();
-    refetchGroups();
+    refetch();
   };
 
-  const listData: any[] = [];
+  const listData = (conversations || []).filter((item) => {
+    if (filter === "all") return true;
+    if (filter === "friends") return item.kind === "friend";
+    if (filter === "groups") return item.kind === "group";
+    return true;
+  });
 
-  if (filter === "all" || filter === "friends") {
-    if (friends) {
-      listData.push(...friends.map(f => ({ ...f, isGroup: false, key: `user-${f._id}` })));
-    }
-  }
-
-  if (filter === "all" || filter === "groups") {
-    if (groups) {
-      listData.push(...groups.map(g => ({ ...g, isGroup: true, key: `group-${g._id}` })));
-    }
-  }
-
-  const renderItem = ({ item }: { item: any }) => {
-    const title = item.isGroup ? item.title : item.name;
-    const subtitle = item.isGroup ? item.description : item.bio || "Hey there! I am using Talksy.";
-    const imageUri = item.isGroup ? item.logo : item.profile;
-    const initial = title ? title.charAt(0).toUpperCase() : "";
-
-    const handlePress = () => {
-      if (item.isGroup) {
-        router.push(`/group-chat/${item._id}`);
+  const renderItem = ({ item }: { item: ChatListItem }) => {
+    const handlePress = (): void => {
+      if (item.kind === "group") {
+        router.push(`/group-chat/${item.id}`);
       } else {
-        router.push(`/chat/${item._id}`);
+        router.push(`/chat/${item.id}`);
       }
     };
 
-    return (
-      <List.Item
-        title={title}
-        description={subtitle}
-        descriptionNumberOfLines={1}
-        onPress={handlePress}
-        left={(props) =>
-          imageUri ? (
-            <Avatar.Image {...props} size={48} source={{ uri: imageUri }} />
-          ) : (
-            <Avatar.Text {...props} size={48} label={initial} />
-          )
-        }
-        right={(props) => (
-          <List.Icon {...props} icon={item.isGroup ? "chevron-right" : "chat-outline"} />
-        )}
-        style={styles.listItem}
-      />
-    );
+    return <ChatPreviewRow item={item} onPress={handlePress} />;
   };
 
-  if (isLoadingFriends || isLoadingGroups) {
-    return (
-      <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
+  if (isLoading) {
+    return <ScreenState loading />;
   }
 
   return (
@@ -98,17 +62,13 @@ export default function ChatsScreen() {
       </View>
 
       {listData.length === 0 ? (
-        <View style={styles.center}>
-          <Text variant="bodyLarge" style={styles.emptyText}>
-            No chats found. Go to Explore to find friends or groups!
-          </Text>
-        </View>
+        <ScreenState title="No chats yet. Explore people or groups to start talking." />
       ) : (
         <FlatList
           data={listData}
           keyExtractor={(item) => item.key}
           renderItem={renderItem}
-          ItemSeparatorComponent={() => <Divider />}
+          contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl refreshing={false} onRefresh={onRefresh} colors={[theme.colors.primary]} />
           }
@@ -129,25 +89,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
   filterWrapper: {
-    padding: 12,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 8,
   },
   segmentedButtons: {
     width: "100%",
   },
-  listItem: {
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-  },
-  emptyText: {
-    textAlign: "center",
-    opacity: 0.6,
+  listContent: {
+    paddingBottom: 96,
   },
   fab: {
     position: "absolute",

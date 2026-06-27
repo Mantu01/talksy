@@ -1,18 +1,28 @@
 import React from "react";
 import { View, StyleSheet, ScrollView, Platform } from "react-native";
-import { TextInput, Button, Text, Avatar, useTheme, Card, HelperText, ActivityIndicator, IconButton, Portal, Dialog, List, Divider } from "react-native-paper";
+import { TextInput, Button, Text, useTheme, Card, ActivityIndicator, IconButton, Portal, Dialog, List, Divider, Snackbar } from "react-native-paper";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, setToken } from "@/utils/api";
 import { useLocalState } from "@/hooks/use-local-state";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { socketService } from "@/utils/socket";
+import { SafeAvatar } from "@/components/common/SafeAvatar";
+import { SafeBanner } from "@/components/common/SafeBanner";
+import { TalksyUser } from "@/types/domain";
+import { getId } from "@/utils/ids";
 
 export default function SettingsScreen() {
   const theme = useTheme();
-  const { data: user, isLoading } = useQuery<any>({
+  const { data: user, isLoading } = useQuery<TalksyUser | null>({
     queryKey: ["auth-user"],
-    queryFn: () => apiRequest("/auth/me").catch(() => null),
+    queryFn: async () => {
+      try {
+        return await apiRequest<TalksyUser>("/auth/me");
+      } catch {
+        return null;
+      }
+    },
   });
 
   if (isLoading || !user) {
@@ -26,7 +36,7 @@ export default function SettingsScreen() {
   return <SettingsForm user={user} />;
 }
 
-function SettingsForm({ user }: { user: any }) {
+function SettingsForm({ user }: { user: TalksyUser }) {
   const theme = useTheme();
   const queryClient = useQueryClient();
 
@@ -35,18 +45,31 @@ function SettingsForm({ user }: { user: any }) {
   const initialMonth = dobParts[1] || "";
   const initialDay = dobParts[2] || "";
 
-  const [name, setName] = useLocalState("set-name", user.name);
-  const [email, setEmail] = useLocalState("set-email", user.email);
-  const [bio, setBio] = useLocalState("set-bio", user.bio || "");
-  const [dobDay, setDobDay] = useLocalState("set-dob-day", initialDay);
-  const [dobMonth, setDobMonth] = useLocalState("set-dob-month", initialMonth);
-  const [dobYear, setDobYear] = useLocalState("set-dob-year", initialYear);
+  const userId = getId(user);
+  const [name, setName] = useLocalState(["settings-name", userId, user.name], user.name);
+  const [email, setEmail] = useLocalState(["settings-email", userId, user.email], user.email);
+  const [bio, setBio] = useLocalState(["settings-bio", userId, user.bio || ""], user.bio || "");
+  const [dobDay, setDobDay] = useLocalState(["settings-dob-day", userId, initialDay], initialDay);
+  const [dobMonth, setDobMonth] = useLocalState(["settings-dob-month", userId, initialMonth], initialMonth);
+  const [dobYear, setDobYear] = useLocalState(["settings-dob-year", userId, initialYear], initialYear);
 
-  const [profileUri, setProfileUri] = useLocalState("set-profile-uri", "");
-  const [bannerUri, setBannerUri] = useLocalState("set-banner-uri", "");
-  const [statusMsg, setStatusMsg] = useLocalState("set-status-msg", "");
-  const [errorMsg, setErrorMsg] = useLocalState("set-error-msg", "");
-  const [selectedPickerField, setSelectedPickerField] = useLocalState<"profile" | "banner" | null>("settings-picker-field", null);
+  const [currentPassword, setCurrentPassword] = useLocalState(["settings-curr-pass", userId], "");
+  const [newPassword, setNewPassword] = useLocalState(["settings-new-pass", userId], "");
+  const [confirmPassword, setConfirmPassword] = useLocalState(["settings-conf-pass", userId], "");
+
+  const [profileUri, setProfileUri] = useLocalState(["settings-profile-uri", userId], "");
+  const [bannerUri, setBannerUri] = useLocalState(["settings-banner-uri", userId], "");
+
+  const [snackbarVisible, setSnackbarVisible] = useLocalState(["settings-sb-visible", userId], false);
+  const [snackbarMessage, setSnackbarMessage] = useLocalState(["settings-sb-msg", userId], "");
+  const [snackbarType, setSnackbarType] = useLocalState<"info" | "error">(["settings-sb-type", userId], "info");
+  const [selectedPickerField, setSelectedPickerField] = useLocalState<"profile" | "banner" | null>(["settings-picker-field", userId], null);
+
+  const showSnackbar = (message: string, type: "info" | "error" = "info") => {
+    setSnackbarMessage(message);
+    setSnackbarType(type);
+    setSnackbarVisible(true);
+  };
 
   const pickImage = async (field: "profile" | "banner", source: "camera" | "gallery") => {
     try {
@@ -54,7 +77,7 @@ function SettingsForm({ user }: { user: any }) {
       if (source === "camera") {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
         if (!permission.granted) {
-          setErrorMsg("Camera permission is required");
+          showSnackbar("Camera permission is required", "error");
           return;
         }
         result = await ImagePicker.launchCameraAsync({
@@ -65,7 +88,7 @@ function SettingsForm({ user }: { user: any }) {
       } else {
         const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (!permission.granted) {
-          setErrorMsg("Gallery permission is required");
+          showSnackbar("Gallery permission is required", "error");
           return;
         }
         result = await ImagePicker.launchImageLibraryAsync({
@@ -83,10 +106,9 @@ function SettingsForm({ user }: { user: any }) {
         } else {
           setBannerUri(selectedUri);
         }
-        setErrorMsg("");
       }
     } catch (err) {
-      setErrorMsg("Failed to pick image");
+      showSnackbar("Failed to pick image", "error");
     }
   };
 
@@ -102,7 +124,7 @@ function SettingsForm({ user }: { user: any }) {
         uri: uri,
         name: `${fieldName}.${fileType}`,
         type: `image/${fileType}`,
-      } as any);
+      } as unknown as Blob);
     }
   };
 
@@ -110,14 +132,16 @@ function SettingsForm({ user }: { user: any }) {
     mutationFn: async () => {
       let formattedDob = "";
       if (dobDay || dobMonth || dobYear) {
+        const dayNum = Number(dobDay || "0");
+        const monthNum = Number(dobMonth || "0");
+        const yearNum = Number(dobYear || "0");
+        if (!dayNum || dayNum < 1 || dayNum > 31 || !monthNum || monthNum < 1 || monthNum > 12 || !yearNum || yearNum < 1900 || yearNum > new Date().getFullYear()) {
+          throw new Error("Please enter a valid Date of Birth");
+        }
         const day = dobDay.padStart(2, "0");
         const month = dobMonth.padStart(2, "0");
         const year = dobYear;
         formattedDob = `${year}-${month}-${day}`;
-        const dobDate = new Date(Number(year), Number(month) - 1, Number(day));
-        if (isNaN(dobDate.getTime()) || Number(year) < 1900 || Number(year) > new Date().getFullYear()) {
-          throw new Error("Please enter a valid Date of Birth");
-        }
       }
 
       const formData = new FormData();
@@ -134,21 +158,46 @@ function SettingsForm({ user }: { user: any }) {
         await appendFileToFormData(formData, "banner", bannerUri);
       }
 
-      return apiRequest<any>("/users/profile", {
+      return apiRequest<TalksyUser>("/users/profile", {
         method: "PUT",
         body: formData,
       });
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(["auth-user"], (old: any) => ({ ...old, ...data }));
+      queryClient.setQueryData(["auth-user"], (old: TalksyUser | null) => old ? { ...old, ...data } : data);
       setProfileUri("");
       setBannerUri("");
-      setStatusMsg("Profile updated successfully!");
-      setErrorMsg("");
-      setTimeout(() => setStatusMsg(""), 3000);
+      showSnackbar("Profile updated successfully!");
     },
-    onError: (err: any) => {
-      setErrorMsg(err.message || "Failed to update profile");
+    onError: (err: Error) => {
+      showSnackbar(err.message || "Failed to update profile", "error");
+    },
+  });
+
+  const passwordMutation = useMutation({
+    mutationFn: async () => {
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        throw new Error("All password fields are required");
+      }
+      if (newPassword !== confirmPassword) {
+        throw new Error("New passwords do not match");
+      }
+      if (newPassword.length < 6) {
+        throw new Error("New password must be at least 6 characters");
+      }
+      return apiRequest<{ message: string }>("/users/change-password", {
+        method: "PUT",
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+    },
+    onSuccess: () => {
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      showSnackbar("Password updated successfully!");
+    },
+    onError: (err: Error) => {
+      showSnackbar(err.message || "Failed to update password", "error");
     },
   });
 
@@ -164,144 +213,173 @@ function SettingsForm({ user }: { user: any }) {
   const currentBanner = bannerUri || user.banner;
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <View style={styles.headerContainer}>
-        {currentBanner ? (
-          <Card.Cover source={{ uri: currentBanner }} style={styles.banner} />
-        ) : (
-          <View style={[styles.bannerPlaceholder, { backgroundColor: theme.colors.primaryContainer }]}>
-            <Text style={{ color: theme.colors.onPrimaryContainer }}>No Banner Set</Text>
+    <View style={[styles.mainWrapper, { backgroundColor: theme.colors.background }]}>
+      <ScrollView style={styles.container}>
+        <View style={styles.headerContainer}>
+          <SafeBanner uri={currentBanner} style={styles.banner} />
+
+          <View style={styles.bannerEditOverlay}>
+            <IconButton icon="pencil" mode="contained" size={20} containerColor="rgba(0,0,0,0.5)" iconColor="#fff" onPress={() => setSelectedPickerField("banner")} />
           </View>
-        )}
 
-        <View style={styles.bannerEditOverlay}>
-          <IconButton icon="pencil" mode="contained" size={20} containerColor="rgba(0,0,0,0.5)" iconColor="#fff" onPress={() => setSelectedPickerField("banner")} />
-        </View>
-
-        <View style={styles.avatarWrapper}>
-          {currentProfile ? (
-            <Avatar.Image size={100} source={{ uri: currentProfile }} style={styles.avatar} />
-          ) : (
-            <Avatar.Text size={100} label={user.name ? user.name.charAt(0).toUpperCase() : ""} style={styles.avatar} />
-          )}
-          <View style={styles.avatarEditOverlay}>
-            <IconButton icon="pencil" mode="contained" size={18} containerColor={theme.colors.primary} iconColor={theme.colors.onPrimary} style={styles.avatarEditBtn} onPress={() => setSelectedPickerField("profile")} />
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.formContainer}>
-        <Card style={styles.sectionCard}>
-          <Card.Content style={styles.sectionContent}>
-            <Text variant="titleMedium" style={[styles.sectionTitle, { color: theme.colors.primary }]}>
-              Account Information
-            </Text>
-
-            <TextInput
-              label="Name"
-              value={name}
-              onChangeText={setName}
-              mode="outlined"
-              style={styles.input}
-            />
-
-            <TextInput
-              label="Email"
-              value={email}
-              onChangeText={setEmail}
-              mode="outlined"
-              style={styles.input}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </Card.Content>
-        </Card>
-
-        <Card style={styles.sectionCard}>
-          <Card.Content style={styles.sectionContent}>
-            <Text variant="titleMedium" style={[styles.sectionTitle, { color: theme.colors.primary }]}>
-              Personal Details
-            </Text>
-
-            <TextInput
-              label="Bio"
-              value={bio}
-              onChangeText={setBio}
-              mode="outlined"
-              multiline
-              numberOfLines={3}
-              style={styles.input}
-            />
-
-            <Text variant="bodyMedium" style={styles.label}>
-              Date of Birth
-            </Text>
-            <View style={styles.dobRow}>
-              <TextInput
-                label="Day (DD)"
-                value={dobDay}
-                onChangeText={setDobDay}
-                mode="outlined"
-                keyboardType="numeric"
-                maxLength={2}
-                placeholder="DD"
-                style={styles.dobInput}
-              />
-              <TextInput
-                label="Month (MM)"
-                value={dobMonth}
-                onChangeText={setDobMonth}
-                mode="outlined"
-                keyboardType="numeric"
-                maxLength={2}
-                placeholder="MM"
-                style={styles.dobInput}
-              />
-              <TextInput
-                label="Year (YYYY)"
-                value={dobYear}
-                onChangeText={setDobYear}
-                mode="outlined"
-                keyboardType="numeric"
-                maxLength={4}
-                placeholder="YYYY"
-                style={styles.dobYearInput}
-              />
+          <View style={[styles.avatarWrapper, { backgroundColor: theme.colors.surface }]}>
+            <SafeAvatar uri={currentProfile} name={user.name} size={100} style={styles.avatar} />
+            <View style={styles.avatarEditOverlay}>
+              <IconButton icon="pencil" mode="contained" size={18} containerColor={theme.colors.primary} iconColor={theme.colors.onPrimary} style={styles.avatarEditBtn} onPress={() => setSelectedPickerField("profile")} />
             </View>
-          </Card.Content>
-        </Card>
+          </View>
+        </View>
 
-        {statusMsg ? (
-          <HelperText type="info" visible={!!statusMsg} style={styles.statusText}>
-            {statusMsg}
-          </HelperText>
-        ) : null}
+        <View style={styles.formContainer}>
+          <Card style={styles.sectionCard}>
+            <Card.Content style={styles.sectionContent}>
+              <Text variant="titleMedium" style={[styles.sectionTitle, { color: theme.colors.primary }]}>
+                Account Information
+              </Text>
 
-        {errorMsg ? (
-          <HelperText type="error" visible={!!errorMsg} style={styles.errorText}>
-            {errorMsg}
-          </HelperText>
-        ) : null}
+              <TextInput
+                label="Name"
+                value={name}
+                onChangeText={setName}
+                mode="outlined"
+                style={styles.input}
+              />
 
-        <Button
-          mode="contained"
-          onPress={() => updateMutation.mutate()}
-          loading={updateMutation.isPending}
-          disabled={updateMutation.isPending}
-          style={styles.saveBtn}
-        >
-          Save Profile
-        </Button>
+              <TextInput
+                label="Email"
+                value={email}
+                onChangeText={setEmail}
+                mode="outlined"
+                style={styles.input}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </Card.Content>
+          </Card>
 
-        <Button
-          mode="outlined"
-          onPress={handleLogout}
-          textColor={theme.colors.error}
-          style={[styles.logoutBtn, { borderColor: theme.colors.error }]}
-        >
-          Logout
-        </Button>
-      </View>
+          <Card style={styles.sectionCard}>
+            <Card.Content style={styles.sectionContent}>
+              <Text variant="titleMedium" style={[styles.sectionTitle, { color: theme.colors.primary }]}>
+                Personal Details
+              </Text>
+
+              <TextInput
+                label="Bio"
+                value={bio}
+                onChangeText={setBio}
+                mode="outlined"
+                multiline
+                numberOfLines={3}
+                style={styles.input}
+              />
+
+              <Text variant="bodyMedium" style={styles.label}>
+                Date of Birth
+              </Text>
+              <View style={styles.dobRow}>
+                <TextInput
+                  label="Day (DD)"
+                  value={dobDay}
+                  onChangeText={setDobDay}
+                  mode="outlined"
+                  keyboardType="numeric"
+                  maxLength={2}
+                  placeholder="DD"
+                  style={styles.dobInput}
+                />
+                <TextInput
+                  label="Month (MM)"
+                  value={dobMonth}
+                  onChangeText={setDobMonth}
+                  mode="outlined"
+                  keyboardType="numeric"
+                  maxLength={2}
+                  placeholder="MM"
+                  style={styles.dobInput}
+                />
+                <TextInput
+                  label="Year (YYYY)"
+                  value={dobYear}
+                  onChangeText={setDobYear}
+                  mode="outlined"
+                  keyboardType="numeric"
+                  maxLength={4}
+                  placeholder="YYYY"
+                  style={styles.dobYearInput}
+                />
+              </View>
+            </Card.Content>
+          </Card>
+
+          <Card style={styles.sectionCard}>
+            <Card.Content style={styles.sectionContent}>
+              <Text variant="titleMedium" style={[styles.sectionTitle, { color: theme.colors.primary }]}>
+                Security & Password
+              </Text>
+
+              <TextInput
+                label="Current Password"
+                value={currentPassword}
+                onChangeText={setCurrentPassword}
+                mode="outlined"
+                secureTextEntry
+                autoCapitalize="none"
+                style={styles.input}
+              />
+
+              <TextInput
+                label="New Password"
+                value={newPassword}
+                onChangeText={setNewPassword}
+                mode="outlined"
+                secureTextEntry
+                autoCapitalize="none"
+                style={styles.input}
+              />
+
+              <TextInput
+                label="Confirm New Password"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                mode="outlined"
+                secureTextEntry
+                autoCapitalize="none"
+                style={styles.input}
+              />
+
+              <Button
+                mode="contained-tonal"
+                onPress={() => passwordMutation.mutate()}
+                loading={passwordMutation.isPending}
+                disabled={passwordMutation.isPending || !currentPassword || !newPassword || !confirmPassword}
+                style={styles.actionButton}
+              >
+                Update Password
+              </Button>
+            </Card.Content>
+          </Card>
+
+          <Button
+            mode="contained"
+            onPress={() => updateMutation.mutate()}
+            loading={updateMutation.isPending}
+            disabled={updateMutation.isPending}
+            style={styles.saveBtn}
+          >
+            Save Profile
+          </Button>
+
+          <Button
+            mode="outlined"
+            onPress={handleLogout}
+            textColor={theme.colors.error}
+            style={[styles.logoutBtn, { borderColor: theme.colors.error }]}
+          >
+            Logout
+          </Button>
+        </View>
+      </ScrollView>
+
       <Portal>
         <Dialog visible={selectedPickerField !== null} onDismiss={() => setSelectedPickerField(null)} style={{ borderRadius: 16 }}>
           <Dialog.Title>Update {selectedPickerField === "profile" ? "Profile Picture" : "Cover Banner"}</Dialog.Title>
@@ -331,11 +409,25 @@ function SettingsForm({ user }: { user: any }) {
           </Dialog.Actions>
         </Dialog>
       </Portal>
-    </ScrollView>
+
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={3000}
+        style={{
+          backgroundColor: snackbarType === "error" ? theme.colors.error : theme.colors.primary,
+        }}
+      >
+        {snackbarMessage}
+      </Snackbar>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  mainWrapper: {
+    flex: 1,
+  },
   container: {
     flex: 1,
   },
@@ -352,11 +444,6 @@ const styles = StyleSheet.create({
   },
   banner: {
     height: 140,
-  },
-  bannerPlaceholder: {
-    height: 140,
-    justifyContent: "center",
-    alignItems: "center",
   },
   bannerEditOverlay: {
     position: "absolute",
@@ -427,6 +514,10 @@ const styles = StyleSheet.create({
   dobYearInput: {
     flex: 1.5,
   },
+  actionButton: {
+    marginTop: 4,
+    borderRadius: 8,
+  },
   saveBtn: {
     marginTop: 8,
     paddingVertical: 6,
@@ -436,14 +527,5 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
-  },
-  statusText: {
-    textAlign: "center",
-    color: "green",
-    fontWeight: "bold",
-  },
-  errorText: {
-    textAlign: "center",
-    fontWeight: "bold",
   },
 });
